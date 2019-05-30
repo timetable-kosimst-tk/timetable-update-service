@@ -1,0 +1,22 @@
+steps:
+  # Decrypt firestore credentials
+  - name: gcr.io/cloud-builders/gcloud
+    args:
+      [
+        kms,
+        decrypt,
+        --location=global,
+        --keyring=timetable-client-auth,
+        --key=timetable-kosimst-client-credentials,
+        --plaintext-file=credentials/client-auth.json,
+        --ciphertext-file=credentials/client-auth.json.encrypted,
+      ]
+  # Install dependencies for update-timetables service
+  - name: gcr.io/cloud-builders/npm
+    args: [install]
+  # Build update-timetables service
+  - name: gcr.io/cloud-builders/npm
+    args: [run-script, build]
+  # Deploy update-timetables service
+  - name: gcr.io/cloud-builders/gcloud
+    args: [app, deploy, '${_APPNAME}']

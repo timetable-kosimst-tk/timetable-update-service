@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "es2015",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "typeRoots": ["node_modules/@types"],
+    "outDir": "./dist",
+    "rootDir": ".",
+    "lib": ["es2017.string", "es2018.regexp", "esnext.array", "esnext"]
+  },
+  "include": ["."]
+}

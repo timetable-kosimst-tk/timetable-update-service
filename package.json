@@ -1,0 +1,22 @@
+{
+  "scripts": {
+    "start": "node dist/updateTimetables.js",
+    "start-dev": "ts-node-dev --respawn --transpileOnly ./updateTimetables.ts",
+    "build": "tsc"
+  },
+  "engines": {
+    "node": "10.x.x"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^2.0.0",
+    "@types/express": "^4.16.1",
+    "@types/node-fetch": "^2.3.1",
+    "array.prototype.flat": "^1.2.1",
+    "express": "^4.16.4",
+    "node-fetch": "^2.3.0",
+    "ts-node-dev": "^1.0.0-pre.32"
+  },
+  "devDependencies": {
+    "typescript": "^3.4.5"
+  }
+}
