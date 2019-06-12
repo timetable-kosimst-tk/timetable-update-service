@@ -11,6 +11,7 @@ import { Period } from './interfaces/Period'
 import { fetchTimestamp } from './middleware/fetchTimestamp'
 
 import express from 'express'
+import { POINT_CONVERSION_COMPRESSED } from 'constants'
 
 const flat = require('array.prototype.flat')
 flat.shim()
@@ -26,13 +27,15 @@ const update = async () => {
     .then((doc: any) => doc.data()['last-update'])
   const currentTimestamp = await fetchTimestamp()
 
-  db.collection('timetables').doc('stats').set({
-    'last-update': currentTimestamp
-  })
+  db.collection('timetables')
+    .doc('stats')
+    .set({
+      'last-update': currentTimestamp,
+    })
 
   console.info('Checking for new timetable...')
 
-  if (currentTimestamp && lastTimestamp < currentTimestamp) {
+  if (true) {
     console.info('New timetable found, updating entries...')
     /**
      * Update klassen timetables
@@ -42,9 +45,12 @@ const update = async () => {
     const sources = await fetchSources(new Date())
 
     // Put sources in db
-    db.collection('sources').doc('klassen').set(sources).then(() => {
-      console.info('Klassen list updated successfully')
-    })
+    db.collection('sources')
+      .doc('klassen')
+      .set(sources)
+      .then(() => {
+        console.info('Klassen list updated successfully')
+      })
 
     const entries = Object.entries(sources)
 
@@ -53,24 +59,68 @@ const update = async () => {
         ([name, id]) =>
           new Promise((resolve, reject) => {
             fetchSource(id, new Date())
-              .then(res => {
+              .then(async res => {
                 if (res) {
-                  const timetable = res.timetable.map(day => {
-                    const returnDay: any = {}
+                  const timetable = await Promise.all(
+                    res.timetable.map(async day => {
+                      const cookies = await getSession()
+                      if (cookies) {
+                        const headers = new Headers({
+                          Cookie: cookies,
+                        })
+                        return await Promise.all(
+                          day.map(async hour => {
+                            return await Promise.all(
+                              hour.map(async period => {
+                                const url = `https://thalia.webuntis.com/WebUntis/api/public/period/info?date=${
+                                  period.date
+                                }&starttime=${period.startTime}&endtime=${
+                                  period.endTime
+                                }&elemid=${
+                                  period.id
+                                }&elemtype=1&ttFmtId=1&selectedPeriodId=${
+                                  period.lessonId
+                                }`
 
-                    day.forEach((val, i) => {
-                      returnDay[i] = val
-                    })
-                    return returnDay
-                  })
+                                const details = (await fetch(url, {
+                                  headers,
+                                }).then(res => res.json())).data.blocks.filter(
+                                  (el: any) =>
+                                    el[0].subjectName === period.subjectShort,
+                                )[0][0]
+
+                                return {
+                                  ...period,
+                                  teacherShort: details.teacherNameLong || '',
+                                  klasseShort: details.klasseNameLong || '',
+                                  studentGroups: details.studentGroups || '',
+                                }
+                              }),
+                            )
+                          }),
+                        )
+                      } else {
+                        throw new Error('Could not not create session')
+                      }
+                    }),
+                  )
+                  const parsedTimetable = await Promise.all(
+                    timetable.map(async day => {
+                      const returnDay: any = {}
+                      ;(await day).forEach((val, i) => {
+                        returnDay[i] = val || null
+                      })
+                      return returnDay
+                    }),
+                  )
                   db.collection('timetables')
                     .doc(name)
                     .set({
                       timestamp: res.timestamp,
-                      timetable,
+                      timetable: parsedTimetable,
                     })
                     .then(() => {
-                      resolve(res.timetable)
+                      resolve(timetable)
                     })
                     .catch(reject)
                 }
@@ -87,117 +137,85 @@ const update = async () => {
 
         // Update teacher list
         fetchTeachers(new Date()).then(res => {
-          db.collection('sources').doc('teachers').set(res)
+          db.collection('sources')
+            .doc('teachers')
+            .set(res)
           console.info('Teacher list updated successfully')
         })
 
         const hours = timetables.flat(3)
 
-        const periodUrls = hours.map(
-          hour =>
-            `https://thalia.webuntis.com/WebUntis/api/public/period/info?date=${
-              hour.date
-            }&starttime=${hour.startTime}&endtime=${hour.endTime}&elemid=${
-              hour.id
-            }&elemtype=1&ttFmtId=1&selectedPeriodId=${hour.lessonId}`,
-        )
+        const teachers: any = {}
+        hours.forEach(period => {
+          if (period) {
+            const teachersInvolved = period.teacherShort.split(', ')
 
-        const cookies = await getSession()
-        if (cookies) {
-          const headers = new Headers({
-            Cookie: cookies,
-          })
-
-          const teachers: any = {}
-          Promise.all(
-            periodUrls.map(url =>
-              fetch(url, { headers }).then(res => res.json()),
-            ),
-          ).then(async res => {
-            res
-              .map(period => {
-                return period.data.blocks
-              })
-              .flat(2)
-              .forEach(period => {
-                const teachersInvolved = period.teacherNameLong.split(', ')
-
-                teachersInvolved.forEach((teacher: string) => {
-                  if (teachers[teacher]) {
-                    teachers[teacher].push(period)
-                  } else {
-                    teachers[teacher] = [period]
-                  }
-                })
-              })
-
-            const times = await fetchTimes()
-
-            for (const [teacher, periods] of Object.entries(teachers)) {
-              if (teacher && teacher !== '---') {
-                const timetable: Period[][][] = [[], [], [], [], []]
-
-                // @ts-ignore
-                for (const hour of periods) {
-                  const startTime = hour.periods[0].startTime
-                  const endTime = hour.periods[0].endTime
-
-                  const startHour =
-                    times.filter(({ startTime: hour }) => startTime === hour)[0]
-                      .period - 1
-                  const endHour =
-                    times.filter(({ endTime: hour }) => endTime === hour)[0]
-                      .period - 1
-                  const duration = endHour - startHour + 1
-
-                  const {
-                    // @ts-ignore
-                    groups: { day, month, year },
-                  } = /(?<year>[0-9]{4})(?<month>[0-9]{2})(?<day>[0-9]{2})/.exec(
-                    hour.periods[0].date,
-                  )
-
-                  const parsedDate = new Date(`${year}-${month}-${day}`)
-                  const weekDay = parsedDate.getDay() - 1
-
-                  timetable[weekDay][startHour] = [
-                    {
-                      startHour,
-                      endHour,
-                      parsedDate,
-                      duration,
-                      roomShort: hour.periods[0].rooms.name || '',
-                      roomLong: hour.periods[0].rooms.longName || '',
-                      subjectShort: hour.subjectName || '',
-                      subjectLong: hour.subjectNameLong || '',
-                      klasseShort: hour.klasseName || '',
-                      cancelled: hour.periods[0].isCancelled || false,
-                    },
-                  ]
-                }
-
-                const timetableParsed = timetable.map(day => {
-                  const returnDay: any = {}
-
-                  day.forEach((val, i) => {
-                    returnDay[i] = val
-                  })
-                  return returnDay
-                })
-                db.collection('timetables')
-                  .doc(teacher)
-                  .set({
-                    timestamp: Date.now(),
-                    timetable: timetableParsed,
-                  })
+            teachersInvolved.forEach((teacher: string) => {
+              if (teachers[teacher]) {
+                teachers[teacher].push(period)
+              } else {
+                teachers[teacher] = [period]
               }
+            })
+          }
+        })
+
+        const times = await fetchTimes()
+
+        for (const [teacher, periods] of Object.entries(teachers)) {
+          if (teacher && teacher !== '---') {
+            const timetable: Period[][][] = [[], [], [], [], []]
+
+            // @ts-ignore
+            for (const hour of periods) {
+              const startTime = hour.startTime
+              const endTime = hour.endTime
+
+              const startHour =
+                times.filter(({ startTime: hour }) => startTime === hour)[0]
+                  .period - 1
+              const endHour =
+                times.filter(({ endTime: hour }) => endTime === hour)[0]
+                  .period - 1
+              const duration = endHour - startHour + 1
+
+              const {
+                // @ts-ignore
+                groups: { day, month, year },
+              } = /(?<year>[0-9]{4})(?<month>[0-9]{2})(?<day>[0-9]{2})/.exec(
+                hour.date,
+              )
+
+              const parsedDate = new Date(`${year}-${month}-${day}`)
+              const weekDay = parsedDate.getDay() - 1
+
+              timetable[weekDay][startHour] = [
+                {
+                  ...hour,
+                },
+              ]
             }
-            console.log('Teachers updated successfully')
-          })
+
+            const timetableParsed = timetable.map(day => {
+              const returnDay: any = {}
+
+              day.forEach((val, i) => {
+                returnDay[i] = val
+              })
+              return returnDay
+            })
+            db.collection('timetables')
+              .doc(teacher)
+              .set({
+                timestamp: Date.now(),
+                timetable: timetableParsed,
+              })
+          }
         }
+        console.log('Teachers updated successfully')
       })
-      .catch(() => {
-        console.error('Klassen update failed')
+      .catch(e => {
+        console.error('Klassen update failed', e)
       })
   } else {
     console.info('Timetable is already newest version')
@@ -215,3 +233,5 @@ app.get('/*', (req, res) => {
 app.listen(process.env.PORT || 7000)
 
 export default update
+
+update()
