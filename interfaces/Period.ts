@@ -9,10 +9,10 @@ export interface Period {
   roomLong: string
   klasseShort?: string
   parsedDate: Date
-  startTime: number
-  endTime: number
+  startTime?: number
+  endTime?: number
   lessonId?: number
   id?: number
-  cancelled: boolean
-  substitution: boolean
+  cancelled?: boolean
+  substitution?: boolean
 }
