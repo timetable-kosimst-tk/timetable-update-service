@@ -37,7 +37,15 @@ export const fetchSource = async (source: number, date: Date) => {
         elements: details,
       }: { elementPeriods: any; elements: Detail[] } = data
 
-      for (const { startTime, endTime, elements, date: rawDate, lessonId } of hours) {
+      for (const {
+        startTime,
+        endTime,
+        elements,
+        date: rawDate,
+        lessonId,
+        lessonText,
+        cellState,
+      } of hours) {
         const startHour =
           times.filter(({ startTime: hour }) => startTime === hour)[0].period -
           1
@@ -56,8 +64,8 @@ export const fetchSource = async (source: number, date: Date) => {
         const period: Period = {
           subjectShort: '',
           subjectLong: '',
-          roomShort: '',
-          roomLong: '',
+          roomShort: '?',
+          roomLong: '?',
           startHour,
           endHour,
           duration,
@@ -66,7 +74,9 @@ export const fetchSource = async (source: number, date: Date) => {
           endTime,
           lessonId,
           id: source,
-          date: rawDate
+          date: rawDate,
+          cancelled: cellState === 'CANCEL',
+          substitution: cellState === 'SHIFT' || cellState === 'ADDITIONAL',
         }
 
         for (const { type, id } of elements) {
@@ -81,6 +91,10 @@ export const fetchSource = async (source: number, date: Date) => {
 
           period[type === 3 ? 'subjectShort' : 'roomShort'] = shortName
           period[type === 3 ? 'subjectLong' : 'roomLong'] = longName
+        }
+
+        if (period.subjectShort === '') {
+          period.subjectLong = lessonText || '?'
         }
 
         if (timetable[weekDay][startHour]) {
