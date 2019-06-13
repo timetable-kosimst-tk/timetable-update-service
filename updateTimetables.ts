@@ -95,7 +95,7 @@ const update = async () => {
                                   headers,
                                 }).then(res => res.json())).data.blocks.filter(
                                   (el: any) =>
-                                    el[0].subjectName === period.subjectShort,
+                                    el[0].subjectName === period.subjectShort && el[0].lesson.id === period.lessonId,
                                 )[0][0]
 
                                 return {
