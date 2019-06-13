@@ -35,7 +35,7 @@ const update = async () => {
 
   console.info('Checking for new timetable...')
 
-  if (true) {
+  if (currentTimestamp && currentTimestamp > lastTimestamp) {
     console.info('New timetable found, updating entries...')
     /**
      * Update klassen timetables
@@ -43,6 +43,15 @@ const update = async () => {
     console.info('Klassen update initiated')
 
     const sources = await fetchSources(new Date())
+
+    // Update teacher list
+    const teacherList = await fetchTeachers(new Date()).then(res => {
+      db.collection('sources')
+        .doc('teachers')
+        .set(res)
+      console.info('Teacher list updated successfully')
+      return res
+    })
 
     // Put sources in db
     db.collection('sources')
@@ -92,6 +101,12 @@ const update = async () => {
                                 return {
                                   ...period,
                                   teacherShort: details.teacherNameLong || '',
+                                  teacherLong: details.teacherNameLong
+                                    ? details.teacherNameLong
+                                      .split(', ')
+                                      .map((teacherName: any) => teacherList[teacherName])
+                                      .join(', ')
+                                    : '',
                                   klasseShort: details.klasseNameLong || '',
                                   studentGroups: details.studentGroups || '',
                                 }
@@ -134,14 +149,6 @@ const update = async () => {
       .then(async timetables => {
         console.info('Klassen updated successfully')
         console.info('Teacher update initiated')
-
-        // Update teacher list
-        fetchTeachers(new Date()).then(res => {
-          db.collection('sources')
-            .doc('teachers')
-            .set(res)
-          console.info('Teacher list updated successfully')
-        })
 
         const hours = timetables.flat(3)
 
@@ -233,5 +240,3 @@ app.get('/*', (req, res) => {
 app.listen(process.env.PORT || 7000)
 
 export default update
-
-update()
