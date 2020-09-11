@@ -14,7 +14,7 @@
     "@types/node-fetch": "^2.3.1",
     "array.prototype.flat": "^1.2.1",
     "express": "^4.16.4",
-    "node-fetch": "^2.3.0",
+    "node-fetch": "^2.6.1",
     "ts-node-dev": "^1.0.0-pre.32"
   },
   "devDependencies": {
